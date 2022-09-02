@@ -83,7 +83,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
       metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :plug_cowboy))
 
       [
-        http_events(metric_prefix, opts) |> IO.inspect(limit: :infinity)
+        http_events(metric_prefix, opts)
       ]
     end
 
