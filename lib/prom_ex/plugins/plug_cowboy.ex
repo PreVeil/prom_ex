@@ -83,7 +83,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
       metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :plug_cowboy))
 
       [
-        http_events(metric_prefix, opts)
+        http_events(metric_prefix, opts) |> IO.inspect(limit: :infinity)
       ]
     end
 
@@ -196,45 +196,13 @@ if Code.ensure_loaded?(Plug.Cowboy) do
       end
     end
 
-    defp maybe_get_parametrized_path(req, routers) do
-      # credo:disable-for-next-line
-      cond do
-        Code.ensure_loaded?(Phoenix) ->
-          find_phoenix_route(routers, req)
-
-        # TODO: This needs to be further investigated to see how the normalized route can be extracted
-        # Code.ensure_loaded?(Plug.Router) ->
-        #  find_plug_route(routers, req)
-
-        true ->
-          @default_route
-      end
+    defp maybe_get_parametrized_path(req, _routers) do
+      String.replace(req.path, "mailboxes", "mboxes")
+      |> String.replace("messages", "msgs")
+      |> String.split("/", trim: true) 
+      |> Enum.filter(fn s -> len = String.length(s); len > 2 && len < 15 end) 
+      |> Enum.map_join("/", &(&1))
     end
-
-    defp find_phoenix_route(routers, %{method: method, path: path}) do
-      routers
-      |> Enum.find_value(@default_route, fn router ->
-        case Phoenix.Router.route_info(router, method, path, "") do
-          :error ->
-            false
-
-          %{route: route} ->
-            route
-        end
-      end)
-    end
-
-    # defp find_plug_route(routers, req) do
-    #   conn = Conn.conn(req)
-    #
-    #   routers
-    #   |> Enum.find_value(@default_route, fn router ->
-    #     case router.call(conn, []) do
-    #       %{private: %{plug_route: {route, _fn}}} -> route
-    #       _ -> false
-    #     end
-    #   end)
-    # end
 
     defp get_http_status(resp_status) when is_integer(resp_status) do
       to_string(resp_status)
