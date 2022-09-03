@@ -73,10 +73,6 @@ if Code.ensure_loaded?(Plug.Cowboy) do
 
     require Logger
 
-    # alias Plug.Cowboy.Conn
-
-    @default_route "Unknown"
-
     @impl true
     def event_metrics(opts) do
       otp_app = Keyword.fetch!(opts, :otp_app)
