@@ -132,7 +132,7 @@ defmodule PromEx.Plugins.Application do
       ]
     ),
     Polling.build(
-      :application_total_heap_size__polling_metrics,
+      :application_total_heap_size_polling_metrics,
       10000,
       {__MODULE__, :get_top_process, [:total_heap_size, false]},
       [
@@ -140,6 +140,19 @@ defmodule PromEx.Plugins.Application do
           metric_prefix ++ [:total_heap_size, :status],
           event_name: [:prom_ex, :plugin, :application, :total_heap_size, :status],
           description: "Registered Collection Server process consuming the most memory.",
+          measurement: :status,
+          tags: [:data]
+        )
+      ]),
+    Polling.build(
+      :application_message_queue_len_polling_metrics,
+      10000,
+      {__MODULE__, :get_top_process, [:message_queue_len, false]},
+      [
+        last_value(
+          metric_prefix ++ [:message_queue_len, :status],
+          event_name: [:prom_ex, :plugin, :application, :message_queue_len, :status],
+          description: "Registered Collection Server process witht the longest message queue.",
           measurement: :status,
           tags: [:data]
         )
