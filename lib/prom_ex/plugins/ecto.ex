@@ -237,6 +237,9 @@ if Code.ensure_loaded?(Ecto) do
       }
     end
 
+    defp ecto_query_tag_values(%{source: nil}) do
+      %{}
+
     defp ecto_query_tag_values(%{repo: repo, source: source, result: result}) do
       %{
         repo: repo |> Atom.to_string() |> String.trim_leading("Elixir."),

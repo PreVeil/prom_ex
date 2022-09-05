@@ -52,6 +52,8 @@ defmodule PromEx.Plugins.Application do
 
   use PromEx.Plugin
 
+  @proc_info_keys [:reductions, :message_queue_len, :total_heap_size, :registered_name]
+
   @filter_out_apps [
     :iex,
     :inets,
@@ -65,14 +67,13 @@ defmodule PromEx.Plugins.Application do
   def manual_metrics(opts) do
     otp_app = Keyword.fetch!(opts, :otp_app)
     deps = Keyword.get(opts, :deps, :all)
-    git_sha_mfa = Keyword.get(opts, :git_sha_mfa, {__MODULE__, :git_sha, []})
     git_author_mfa = Keyword.get(opts, :git_author_mfa, {__MODULE__, :git_author, []})
     metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :application))
 
     [
       Manual.build(
         :application_versions_manual_metrics,
-        {__MODULE__, :apps_running, [otp_app, deps, git_sha_mfa, git_author_mfa]},
+        {__MODULE__, :apps_running, [otp_app, deps, git_author_mfa]},
         [
           # Capture information regarding the primary application (i.e the user's application)
           last_value(
@@ -90,24 +91,6 @@ defmodule PromEx.Plugins.Application do
             description: "Information regarding the application's dependencies.",
             measurement: :status,
             tags: [:name, :version, :modules]
-          ),
-
-          # Capture application Git SHA using user provided MFA
-          last_value(
-            metric_prefix ++ [:git_sha, :info],
-            event_name: [otp_app | [:application, :git_sha, :info]],
-            description: "The application's Git SHA at the time of deployment.",
-            measurement: :status,
-            tags: [:sha]
-          ),
-
-          # Capture application Git author using user provided MFA
-          last_value(
-            metric_prefix ++ [:git_author, :info],
-            event_name: [otp_app | [:application, :git_author, :info]],
-            description: "The application's author of the last Git commit at the time of deployment.",
-            measurement: :status,
-            tags: [:author]
           )
         ]
       )
@@ -120,7 +103,7 @@ defmodule PromEx.Plugins.Application do
     poll_rate = Keyword.get(opts, :poll_rate, 5_000)
     metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :application))
 
-    Polling.build(
+    [Polling.build(
       :application_time_polling_metrics,
       poll_rate,
       {__MODULE__, :execute_time_metrics, []},
@@ -133,7 +116,34 @@ defmodule PromEx.Plugins.Application do
           unit: :millisecond
         )
       ]
-    )
+    ), 
+    Polling.build(
+      :application_reductions_polling_metrics,
+      10000,
+      {__MODULE__, :get_top_process, [:reductions, true]},
+      [
+        last_value(
+          metric_prefix ++ [:reductions, :status],
+          event_name: [:prom_ex, :plugin, :application, :reductions, :status],
+          description: "Registered Collection Server process with the most reductions since last invocation.",
+          measurement: :status,
+          tags: [:data]
+        )
+      ]
+    ),
+    Polling.build(
+      :application_total_heap_size__polling_metrics,
+      10000,
+      {__MODULE__, :get_top_process, [:total_heap_size, false]},
+      [
+        last_value(
+          metric_prefix ++ [:total_heap_size, :status],
+          event_name: [:prom_ex, :plugin, :application, :total_heap_size, :status],
+          description: "Registered Collection Server process consuming the most memory.",
+          measurement: :status,
+          tags: [:data]
+        )
+      ])]
   end
 
   @doc false
@@ -165,7 +175,7 @@ defmodule PromEx.Plugins.Application do
   end
 
   @doc false
-  def apps_running(otp_app, deps, git_sha_mfa, git_author_mfa) do
+  def apps_running(otp_app, deps, git_author_mfa) do
     # Loop through all of the dependencies
     filtered_deps =
       if deps == :all do
@@ -204,16 +214,6 @@ defmodule PromEx.Plugins.Application do
       }
     )
 
-    # Publish Git SHA data
-    {module, function, args} = git_sha_mfa
-    git_sha = apply(module, function, args)
-
-    :telemetry.execute(
-      [otp_app | [:application, :git_sha, :info]],
-      %{status: 1},
-      %{sha: git_sha}
-    )
-
     # Publish Git author data
     {module, function, args} = git_author_mfa
     git_author = apply(module, function, args)
@@ -224,4 +224,47 @@ defmodule PromEx.Plugins.Application do
       %{author: git_author}
     )
   end
+
+  @doc false 
+  def get_top_process(key, delta) do
+     value = get_cs_registered() 
+     |> Enum.map(&(Keyword.take(Process.info(Process.whereis(&1)), @proc_info_keys)++[pid: &1])) 
+     |> get_cs_deltas(key, delta)
+     |> Enum.sort_by(&(&1[key]), :desc)  
+     |> hd() 
+
+    name = value[:registered_name] |> Atom.to_string() |> String.split(".") |> List.last()
+    data = "#{name} : #{inspect(value[key])}"
+
+    :ets.select_delete(Elixir.CollectionServer.PromEx.Metrics, [{{{[:collection_server, :prom_ex, :application, key, :status], :_}, :_}, [], [true]}])
+    :telemetry.execute([:prom_ex, :plugin, :application, key, :status], %{status: value[key]}, %{data: data})
+  end
+ 
+  defp get_cs_registered() do
+     Process.registered() 
+     |> Enum.filter(fn mod -> 
+           Atom.to_string(mod) 
+           |> String.split(".") 
+           |> name_filter()
+     end)
+  end
+
+  defp name_filter(data) do
+     Enum.member?(data, "CollectionServer") and not Enum.member?(data, "PromEx")
+  end
+ 
+  defp get_cs_deltas(new_data, key, true) do
+    res = Enum.map(new_data, fn new_info -> 
+       case :ets.lookup(:prom_ex_proc_delta, new_info[:registered_name]) do
+         [{_, old_info}] -> [{:registered_name, new_info[:registered_name]}, {key, new_info[key] - old_info[key]}]
+         _ -> [{:registered_name, new_info[:registered_name]}, {key, new_info[key]}]
+       end
+    end)	
+    :ets.delete_all_objects(:prom_ex_proc_delta)
+    Enum.map(new_data, &(:ets.insert(:prom_ex_proc_delta, {&1[:registered_name],&1})))
+    res
+  end
+
+  defp get_cs_deltas(new_data, _, _), do:
+    new_data
 end
