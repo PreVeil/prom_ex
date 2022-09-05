@@ -170,6 +170,7 @@ defmodule PromEx do
       @impl Supervisor
       def init(_) do
         # Get module init options from module callback
+        :ets.new(:prom_ex_proc_delta, [:named_table, :public])
         %PromEx.Config{
           disabled: disabled,
           manual_metrics_start_delay: manual_metrics_start_delay,
