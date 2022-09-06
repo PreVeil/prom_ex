@@ -73,6 +73,30 @@ if Code.ensure_loaded?(Plug.Cowboy) do
 
     require Logger
 
+    def valid_paths() do
+      [
+  	{"mail", 2},
+  	{"mail", 5},
+  	{"mail", 4},
+  	{"mail", 3},
+  	{"mail", 6},
+  	{"users", 2},
+  	{"users", 3},
+  	{"users", 4},
+  	{"users", 5},
+  	{"users", 1},
+  	{"users", 6},
+  	{"export", 4},
+  	{"storage", 3},
+  	{"storage", 2},
+  	{"storage", 4},
+  	{"crash", 1},
+  	{"crash", 2},
+  	{"test", 1},
+  	{"test", 3}
+      ]
+    end
+
     @impl true
     def event_metrics(opts) do
       otp_app = Keyword.fetch!(opts, :otp_app)
@@ -220,8 +244,8 @@ if Code.ensure_loaded?(Plug.Cowboy) do
     defp drop_ignored(ignored_routes) do
       fn
         %{req: %{path: path}} ->
-          ignored_routes
-          |> MapSet.member?(path)
+          decoded_path = String.slice(path, 1, 100) |> String.split("/") |> then(fn x -> {hd(x), Enum.count(x)} end)
+          MapSet.member?(ignored_routes, path) && not Enum.member(valid_paths, decoded_path)
 
         _meta ->
           false
