@@ -245,7 +245,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
       fn
         %{req: %{path: path}} ->
           decoded_path = String.slice(path, 1, 100) |> String.split("/") |> then(fn x -> {hd(x), Enum.count(x)} end)
-          MapSet.member?(ignored_routes, path) && not Enum.member?(valid_paths, decoded_path)
+          MapSet.member?(ignored_routes, path) && not Enum.member?(valid_paths(), decoded_path)
 
         _meta ->
           false
