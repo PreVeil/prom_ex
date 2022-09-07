@@ -222,7 +222,6 @@ if Code.ensure_loaded?(Plug.Cowboy) do
     defp drop_ignored(ignored_routes, route_validator) do
       fn
         %{req: %{path: path}} ->
-          decoded_path = String.slice(path, 1, 100) |> String.split("/") |> then(fn x -> {hd(x), Enum.count(x)} end)
           MapSet.member?(ignored_routes, path) || not route_validator.(path)
 
         _meta ->
