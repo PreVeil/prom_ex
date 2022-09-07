@@ -247,9 +247,9 @@ defmodule PromEx.Plugins.Application do
      |> hd() 
 
     name = value[:registered_name] |> Atom.to_string() |> String.split(".") |> List.last()
-    data = "#{name} : #{inspect(value[key])}"
+    data = "#{name}"
 
-    :ets.select_delete(Elixir.CollectionServer.PromEx.Metrics, [{{{[:collection_server, :prom_ex, :application, key, :status], :_}, :_}, [], [true]}])
+    #:ets.select_delete(Elixir.CollectionServer.PromEx.Metrics, [{{{[:collection_server, :prom_ex, :application, key, :status], :_}, :_}, [], [true]}])
     :telemetry.execute([:prom_ex, :plugin, :application, key, :status], %{status: value[key]}, %{data: data})
   end
  
