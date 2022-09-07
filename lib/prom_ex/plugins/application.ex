@@ -101,6 +101,7 @@ defmodule PromEx.Plugins.Application do
   def polling_metrics(opts) do
     otp_app = Keyword.fetch!(opts, :otp_app)
     poll_rate = Keyword.get(opts, :poll_rate, 5_000)
+    stats_poll_rate = Keyword.get(opts, :stats_poll_rate, 10_000)
     metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :application))
 
     [Polling.build(
@@ -119,7 +120,7 @@ defmodule PromEx.Plugins.Application do
     ), 
     Polling.build(
       :application_reductions_polling_metrics,
-      10000,
+      stats_poll_rate,
       {__MODULE__, :get_top_process, [:reductions, true]},
       [
         last_value(
@@ -127,13 +128,13 @@ defmodule PromEx.Plugins.Application do
           event_name: [:prom_ex, :plugin, :application, :reductions, :status],
           description: "Registered Collection Server process with the most reductions since last invocation.",
           measurement: :status,
-          tags: [:data]
+          tags: [:reg_name]
         )
       ]
     ),
     Polling.build(
       :application_total_heap_size_polling_metrics,
-      10000,
+      stats_poll_rate,
       {__MODULE__, :get_top_process, [:total_heap_size, false]},
       [
         last_value(
@@ -141,12 +142,12 @@ defmodule PromEx.Plugins.Application do
           event_name: [:prom_ex, :plugin, :application, :total_heap_size, :status],
           description: "Registered Collection Server process consuming the most memory.",
           measurement: :status,
-          tags: [:data]
+          tags: [:reg_name]
         )
       ]),
     Polling.build(
       :application_message_queue_len_polling_metrics,
-      10000,
+      stats_poll_rate,
       {__MODULE__, :get_top_process, [:message_queue_len, false]},
       [
         last_value(
@@ -154,7 +155,7 @@ defmodule PromEx.Plugins.Application do
           event_name: [:prom_ex, :plugin, :application, :message_queue_len, :status],
           description: "Registered Collection Server process witht the longest message queue.",
           measurement: :status,
-          tags: [:data]
+          tags: [:reg_name]
         )
       ])]
   end
@@ -247,10 +248,10 @@ defmodule PromEx.Plugins.Application do
      |> hd() 
 
     name = value[:registered_name] |> Atom.to_string() |> String.split(".") |> List.last()
-    data = "#{name}"
+    reg_name = "#{name}"
 
-    #:ets.select_delete(Elixir.CollectionServer.PromEx.Metrics, [{{{[:collection_server, :prom_ex, :application, key, :status], :_}, :_}, [], [true]}])
-    :telemetry.execute([:prom_ex, :plugin, :application, key, :status], %{status: value[key]}, %{data: data})
+    :ets.select_delete(Elixir.CollectionServer.PromEx.Metrics, [{{{[:collection_server, :prom_ex, :application, key, :status], :_}, :_}, [], [true]}])
+    :telemetry.execute([:prom_ex, :plugin, :application, key, :status], %{status: value[key]}, %{reg_name: reg_name})
   end
  
   defp get_cs_registered() do
