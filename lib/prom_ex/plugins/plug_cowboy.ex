@@ -76,7 +76,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
     @impl true
     def event_metrics(opts) do
       otp_app = Keyword.fetch!(opts, :otp_app)
-      metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :plug_cowboy))
+      metric_prefix = [otp_app, :prom_ex]
 
       [
         http_events(metric_prefix, opts)
