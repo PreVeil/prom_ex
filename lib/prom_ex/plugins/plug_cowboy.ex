@@ -42,20 +42,6 @@ if Code.ensure_loaded?(Plug.Cowboy) do
     end
     ```
 
-    To ignore certain paths, pass a list of routes using the `:ignore_routes` option
-
-    ```
-    defmodule WebApp.PromEx do
-      use PromEx, otp_app: :web_app
-
-      @impl true
-      def plugins do
-        [
-          ...
-          {PromEx.Plugins.PlugCowboy, routers: [MyApp.Router], ignore_routes: ["/metrics"]}
-        ]
-      end
-
       @impl true
       def dashboards do
         [
@@ -90,11 +76,6 @@ if Code.ensure_loaded?(Plug.Cowboy) do
 
       allow_routes = Keyword.get(opts , :allow_routes, fn(_) -> true end)
 
-      ignore_routes =
-        opts
-        |> Keyword.get(:ignore_routes, [])
-        |> MapSet.new()
-
       routers =
         opts
         |> Keyword.fetch!(:routers)
@@ -112,7 +93,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             reporter_options: [
               buckets: [10, 100, 500, 1_000, 5_000, 10_000, 30_000]
             ],
-            drop: drop_ignored(ignore_routes, allow_routes),
+            drop: drop_route?(allow_routes),
             tag_values: &get_tags(&1, routers),
             tags: http_metrics_tags,
             unit: {:native, :millisecond}
@@ -125,7 +106,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             reporter_options: [
               buckets: [10, 100, 500, 1_000, 5_000, 10_000, 30_000]
             ],
-            drop: drop_ignored(ignore_routes, allow_routes),
+            drop: drop_route?(allow_routes),
             tag_values: &get_tags(&1, routers),
             tags: http_metrics_tags,
             unit: {:native, :millisecond}
@@ -138,7 +119,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             reporter_options: [
               buckets: [10, 100, 500, 1_000, 5_000, 10_000, 30_000]
             ],
-            drop: drop_ignored(ignore_routes, allow_routes),
+            drop: drop_route?(allow_routes),
             tag_values: &get_tags(&1, routers),
             tags: http_metrics_tags,
             unit: {:native, :millisecond}
@@ -153,7 +134,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             reporter_options: [
               buckets: [64, 512, 4_096, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216]
             ],
-            drop: drop_ignored(ignore_routes, allow_routes),
+            drop: drop_route?(allow_routes),
             tag_values: &get_tags(&1, routers),
             tags: http_metrics_tags,
             unit: :byte
@@ -164,7 +145,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             metric_prefix ++ [:http, :requests, :total],
             event_name: cowboy_stop_event,
             description: "The number of requests that have been serviced.",
-            drop: drop_ignored(ignore_routes, allow_routes),
+            drop: drop_route?(allow_routes),
             tag_values: &get_tags(&1, routers),
             tags: http_metrics_tags
           )
@@ -219,10 +200,10 @@ if Code.ensure_loaded?(Plug.Cowboy) do
       :undefined
     end
 
-    defp drop_ignored(ignored_routes, allow_routes) do
+    defp drop_route?(allow_routes_fun) do
       fn
-        %{req: %{path: path}} ->
-          MapSet.member?(ignored_routes, path) || not allow_routes.(path)
+        %{req: req} ->
+          not allow_routes_fun.(req)
 
         _meta ->
           false
