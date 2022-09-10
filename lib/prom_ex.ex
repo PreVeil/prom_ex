@@ -265,6 +265,21 @@ defmodule PromEx do
       def dashboards, do: []
 
       @doc false
+      def query_tag() do
+        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :prom_ex | :'$1'], :_}, :_}, [], [:'$1']}])
+      end
+
+      @doc false
+      def query_tag(tag) do
+        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :prom_ex, tag | :'$1'], :_}, :_}, [], [:'$1']}])
+      end
+  
+      @doc false
+      def query_stats(tags) do
+        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :prom_ex | tags], :'$1'}, :'$2'}, [], [[:'$1', :'$2']]}])
+      end
+
+      @doc false
       def __otp_app__ do
         unquote(otp_app)
       end
@@ -337,21 +352,6 @@ defmodule PromEx do
 
       defoverridable PromEx
     end
-  end
-
-  @doc false
-  def query_tag(app) do
-    :ets.select(Elixir.CollectionServer.PromEx.Metrics, [{{{[app, :prom_ex | :'$1'], :_}, :_}, [], [:'$1']}])
-  end
-
-  @doc false
-  def query_tag(app, tag) do
-    :ets.select(Elixir.CollectionServer.PromEx.Metrics, [{{{[app, :prom_ex, tag | :'$1'], :_}, :_}, [], [:'$1']}])
-  end
-  
-  @doc false
-  def query_stats(app, tags) do
-    :ets.select(Elixir.CollectionServer.PromEx.Metrics, [{{{[app, :prom_ex | tags], :'$1'}, :'$2'}, [], [[:'$1', :'$2']]}])
   end
 
   @doc false
