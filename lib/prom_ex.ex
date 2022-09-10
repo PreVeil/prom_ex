@@ -340,6 +340,21 @@ defmodule PromEx do
   end
 
   @doc false
+  defp query_tag(app) do
+    :ets.select(Elixir.CollectionServer.PromEx.Metrics, [{{{[app, :prom_ex | :'$1'], :_}, :_}, [], [:'$1']}])
+  end
+
+  @doc false
+  defp query_tag(app, tag) do
+    :ets.select(Elixir.CollectionServer.PromEx.Metrics, [{{{[app, :prom_ex, tag | :'$1'], :_}, :_}, [], [:'$1']}])
+  end
+  
+  @doc false
+  defp query_stats(app, tags) do
+    :ets.select(Elixir.CollectionServer.PromEx.Metrics, [{{{[app, :prom_ex | tags], :'$1'}, :'$2'}, [], [[:'$1', :'$2']]}])
+  end
+
+  @doc false
   def init_plugins(plugins, default_plugin_opts, drop_metrics_groups) do
     # Adding default PromEx plugin
     plugins = [PromEx.Plugins.PromEx | plugins]
