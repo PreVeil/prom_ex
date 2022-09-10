@@ -202,8 +202,8 @@ if Code.ensure_loaded?(Plug.Cowboy) do
 
     defp drop_route?(allow_routes_fun) do
       fn
-        %{req: req} ->
-          not allow_routes_fun.(req)
+        %{req: %{}} = rsp_map ->
+          not allow_routes_fun.(rsp_map)
 
         _meta ->
           false
