@@ -340,17 +340,17 @@ defmodule PromEx do
   end
 
   @doc false
-  defp query_tag(app) do
+  def query_tag(app) do
     :ets.select(Elixir.CollectionServer.PromEx.Metrics, [{{{[app, :prom_ex | :'$1'], :_}, :_}, [], [:'$1']}])
   end
 
   @doc false
-  defp query_tag(app, tag) do
+  def query_tag(app, tag) do
     :ets.select(Elixir.CollectionServer.PromEx.Metrics, [{{{[app, :prom_ex, tag | :'$1'], :_}, :_}, [], [:'$1']}])
   end
   
   @doc false
-  defp query_stats(app, tags) do
+  def query_stats(app, tags) do
     :ets.select(Elixir.CollectionServer.PromEx.Metrics, [{{{[app, :prom_ex | tags], :'$1'}, :'$2'}, [], [[:'$1', :'$2']]}])
   end
 
