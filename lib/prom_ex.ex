@@ -132,6 +132,7 @@ defmodule PromEx do
   @callback plugins :: [plugin_definition()]
   @callback dashboard_assigns :: keyword()
   @callback dashboards :: [dashboard_definition()]
+  @callback otp_init :: any()
 
   defmacro __using__(opts) do
     # Get calling module name
@@ -171,6 +172,7 @@ defmodule PromEx do
       def init(_) do
         # Get module init options from module callback
         :ets.new(:prom_ex_proc_delta, [:named_table, :public])
+        __MODULE__.otp_init()
         %PromEx.Config{
           disabled: disabled,
           manual_metrics_start_delay: manual_metrics_start_delay,
