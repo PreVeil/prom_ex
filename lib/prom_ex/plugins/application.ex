@@ -103,6 +103,7 @@ defmodule PromEx.Plugins.Application do
     poll_rate = Keyword.get(opts, :poll_rate, 5_000)
     stats_poll_rate = Keyword.get(opts, :stats_poll_rate, 10_000)
     metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :application))
+    otp_module = Keyword.fetch!(opts, :otp_module)
 
     [Polling.build(
       :application_time_polling_metrics,
@@ -121,7 +122,7 @@ defmodule PromEx.Plugins.Application do
     Polling.build(
       :application_reductions_polling_metrics,
       stats_poll_rate,
-      {__MODULE__, :get_top_process, [:reductions, true]},
+      {__MODULE__, :get_top_process, [:reductions, true, otp_module]},
       [
         last_value(
           metric_prefix ++ [:reductions, :status],
@@ -135,7 +136,7 @@ defmodule PromEx.Plugins.Application do
     Polling.build(
       :application_total_heap_size_polling_metrics,
       stats_poll_rate,
-      {__MODULE__, :get_top_process, [:total_heap_size, false]},
+      {__MODULE__, :get_top_process, [:total_heap_size, false, otp_module]},
       [
         last_value(
           metric_prefix ++ [:total_heap_size, :status],
@@ -148,7 +149,7 @@ defmodule PromEx.Plugins.Application do
     Polling.build(
       :application_message_queue_len_polling_metrics,
       stats_poll_rate,
-      {__MODULE__, :get_top_process, [:message_queue_len, false]},
+      {__MODULE__, :get_top_process, [:message_queue_len, false, otp_module]},
       [
         last_value(
           metric_prefix ++ [:message_queue_len, :status],
@@ -240,7 +241,7 @@ defmodule PromEx.Plugins.Application do
   end
 
   @doc false 
-  def get_top_process(key, delta) do
+  def get_top_process(key, delta, otp_module) do
      value = get_cs_registered() 
      |> Enum.map(&(Keyword.take(Process.info(Process.whereis(&1)), @proc_info_keys)++[pid: &1])) 
      |> get_cs_deltas(key, delta)
@@ -250,7 +251,7 @@ defmodule PromEx.Plugins.Application do
     name = value[:registered_name] |> Atom.to_string() |> String.split(".") |> List.last()
     reg_name = "#{name}"
 
-    :ets.select_delete(Elixir.CollectionServer.PromEx.Metrics, [{{{[:collection_server, :prom_ex, :application, key, :status], :_}, :_}, [], [true]}])
+    :ets.select_delete(Module.concat(otp_module,Metrics), [{{{[:collection_server, :prom_ex, :application, key, :status], :_}, :_}, [], [true]}])
     :telemetry.execute([:prom_ex, :plugin, :application, key, :status], %{status: value[key]}, %{reg_name: reg_name})
   end
  
@@ -264,7 +265,7 @@ defmodule PromEx.Plugins.Application do
   end
 
   defp name_filter(data) do
-     Enum.member?(data, "CollectionServer") and not Enum.member?(data, "PromEx")
+     Enum.member?(data, "CollectionServer") and not Enum.member?(data, "Prometheus")
   end
  
   defp get_cs_deltas(new_data, key, true) do
