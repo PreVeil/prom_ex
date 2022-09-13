@@ -74,13 +74,9 @@ if Code.ensure_loaded?(Plug.Cowboy) do
       cowboy_stop_event = [:cowboy, :request, :stop]
       http_metrics_tags = [:status, :method, :path]
 
-      allow_routes_fun = Keyword.get(opts , :allow_routes_fun, fn(_) -> true end)
-      drop_routes_fun = Keyword.get(opts , :drop_routes_fun, fn(_) -> false end)
-
-      routers =
-        opts
-        |> Keyword.fetch!(:routers)
-        |> MapSet.new()
+      drop_good_routes_fun = Keyword.get(opts , :drop_good_routes_fun, fn(_) -> false end)
+      drop_bad_routes_fun = Keyword.get(opts , :drop_bad_routes_fun, fn(_) -> true end)
+      path_formatter_fun = Keyword.get(opts , :path_formatter_fun, fn(%{req: %{path: path}}) -> path end)
 
       Event.build(
         :plug_cowboy_http_event_metrics,
@@ -94,8 +90,8 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             reporter_options: [
               buckets: [10, 100, 500, 1_000, 5_000, 10_000, 30_000]
             ],
-            drop: drop_route?(allow_routes_fun),
-            tag_values: &get_tags(&1, routers),
+            drop: drop_good_route?(drop_good_routes_fun),
+            tag_values: &get_tags(&1, path_formatter_fun),
             tags: http_metrics_tags,
             unit: {:native, :millisecond}
           ),
@@ -107,8 +103,8 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             reporter_options: [
               buckets: [10, 100, 500, 1_000, 5_000, 10_000, 30_000]
             ],
-            drop: drop_route?(allow_routes_fun),
-            tag_values: &get_tags(&1, routers),
+            drop: Process.get(:current_drop_good_route),
+            tag_values: &get_tags(&1, :get),
             tags: http_metrics_tags,
             unit: {:native, :millisecond}
           ),
@@ -120,8 +116,8 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             reporter_options: [
               buckets: [10, 100, 500, 1_000, 5_000, 10_000, 30_000]
             ],
-            drop: drop_route?(allow_routes_fun),
-            tag_values: &get_tags(&1, routers),
+            drop: Process.get(:current_drop_good_route),
+            tag_values: &get_tags(&1, :get),
             tags: http_metrics_tags,
             unit: {:native, :millisecond}
           ),
@@ -135,8 +131,8 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             reporter_options: [
               buckets: [64, 512, 4_096, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216]
             ],
-            drop: drop_route?(allow_routes_fun),
-            tag_values: &get_tags(&1, routers),
+            drop: Process.get(:current_drop_good_route),
+            tag_values: &get_tags(&1, :get),
             tags: http_metrics_tags,
             unit: :byte
           ),
@@ -146,38 +142,50 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             metric_prefix ++ [:http, :requests, :total],
             event_name: cowboy_stop_event,
             description: "The number of requests that have been serviced.",
-            drop: drop_route?(allow_routes_fun),
-            tag_values: &get_tags(&1, routers),
+            drop: Process.delete(:current_drop_good_route),
+            tag_values: &get_tags(&1, :get_delete),
             tags: http_metrics_tags
           ),
 
-          # Capture the number of requests that have been serviced
+          # Capture the number of invalid requests that have been serviced
           counter(
             metric_prefix ++ [:http, :invalid, :requests, :total],
             event_name: cowboy_stop_event,
             description: "The number of invalid requests that have been serviced.",
-            drop: drop_bad_route?(drop_routes_fun),
+            drop: drop_bad_route?(drop_bad_routes_fun),
             tag_values: &get_bad_tags(&1),
             tags: http_metrics_tags
           )
         ]
       )
     end
+    
+    defp get_tags(_ctx, :get), do:
+      Process.get(:current_tags)
 
-    defp get_tags(%{resp_status: resp_status, req: %{method: method} = req}, routers) do
+    defp get_tags(_ctx, :get_delete), do:
+      Process.delete(:current_tags)
+
+    defp get_tags(ctx, path_formatter_fun) do
+       tags = do_get_tags(ctx, path_formatter_fun)
+       Process.put(:current_tags, tags)
+       tags
+    end
+
+    defp do_get_tags(%{resp_status: resp_status, req: %{method: method}} = ctx, path_formatter_fun) do
       case get_http_status(resp_status) do
         status when is_binary(status) ->
           %{
             status: status,
             method: method,
-            path: maybe_get_parametrized_path(req, routers)
+            path: path_formatter_fun.(ctx)
           }
 
         :undefined ->
           %{
             status: :undefined,
             method: method,
-            path: maybe_get_parametrized_path(req, routers)
+            path: path_formatter_fun.(ctx)
           }
 
         nil ->
@@ -192,14 +200,6 @@ if Code.ensure_loaded?(Plug.Cowboy) do
         method: "XXX",
         path: "invalid"
       }
-    end
-
-    defp maybe_get_parametrized_path(req, _routers) do
-      String.replace(req.path, "mailboxes", "mboxes")
-      |> String.replace("messages", "msgs")
-      |> String.split("/", trim: true) 
-      |> Enum.filter(fn s -> len = String.length(s); len > 2 && len < 15 end) 
-      |> Enum.map_join("/", &(&1))
     end
 
     defp get_http_status(resp_status) when is_integer(resp_status) do
@@ -219,20 +219,20 @@ if Code.ensure_loaded?(Plug.Cowboy) do
       :undefined
     end
 
-    defp drop_route?(allow_routes_fun) do
-      fn
-        %{req: %{}} = rsp_map ->
-          not allow_routes_fun.(rsp_map);
+    defp drop_good_route?(drop_good_routes_fun) do
+      fn %{req: %{}} = ctx -> 
+          result = drop_good_routes_fun.(ctx)
+          Process.put(:current_drop_good_route, result)
+          result;
 
         _meta ->
-          false
+          true
       end
     end
 
-    defp drop_bad_route?(drop_routes_fun) do
-      fn
-        %{req: %{}} = rsp_map ->
-          drop_routes_fun.(rsp_map);
+    defp drop_bad_route?(drop_bad_routes_fun) do
+      fn %{req: %{}} = ctx ->
+          drop_bad_routes_fun.(ctx);
 
         _meta ->
           true
