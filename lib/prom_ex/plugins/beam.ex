@@ -403,6 +403,15 @@ defmodule PromEx.Plugins.Beam do
           unit: :byte
         ),
 
+        # Capture the total memory allocated to Erlang system
+        last_value(
+          metric_prefix ++ [:memory, :system, :total, :bytes],
+          event_name: @memory_event,
+          description: "The total amount of memory currently allocated to Erlang system.",
+          measurement: :system,
+          unit: :byte
+        ),
+
         # Capture the total memory allocated to :persistent_term
         last_value(
           metric_prefix ++ [:memory, :persistent_term, :total, :bytes],
