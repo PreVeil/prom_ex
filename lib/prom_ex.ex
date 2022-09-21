@@ -282,6 +282,11 @@ defmodule PromEx do
       end
 
       @doc false
+      def delete_metric(metric) do
+        :ets.select_delete(__MODULE_.Metrics, [{{{metric, :_}, :_}, [], [true]}])
+      end
+
+      @doc false
       def __otp_app__ do
         unquote(otp_app)
       end
