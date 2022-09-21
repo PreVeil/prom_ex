@@ -268,23 +268,23 @@ defmodule PromEx do
 
       @doc false
       def query_tag() do
-        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :prom_ex | :'$1'], :_}, :_}, [], [:'$1']}])
+        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :_ | :'$1'], :_}, :_}, [], [:'$1']}])
       end
 
       @doc false
       def query_tag(tag) do
-        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :prom_ex, tag | :'$1'], :_}, :_}, [], [:'$1']}])
+        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :_, tag | :'$1'], :_}, :_}, [], [:'$1']}])
       end
   
       @doc false
       def query_stats(tags) do
-        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :prom_ex | tags], :'$1'}, :'$2'}, [], [[:'$1', :'$2']]}])
+        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :_ | tags], :'$1'}, :'$2'}, [], [[:'$1', :'$2']]}])
       end
 
-      @doc false
-      def delete_metric(metric) do
-        :ets.select_delete(__MODULE_.Metrics, [{{{metric, :_}, :_}, [], [true]}])
-      end
+      #@doc false
+      #def delete_metric(metric) do
+      #  :ets.select_delete(__MODULE__.Metrics, [{{{metric, :_}, :_}, [], [true]}])
+      #end
 
       @doc false
       def __otp_app__ do
