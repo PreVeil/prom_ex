@@ -90,7 +90,7 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     def handle_proxy_query_event(_event_name, event_measurement, event_metadata, _config) do
-      if :persistent_term.get(:pv_statistics, true),
+      if :persistent_term.get(:ecto_stats, true),
         do: :telemetry.execute(@query_event, event_measurement, event_metadata)
     end
 
