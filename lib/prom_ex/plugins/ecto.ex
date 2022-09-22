@@ -45,6 +45,10 @@ if Code.ensure_loaded?(Ecto) do
       otp_app = Keyword.fetch!(opts, :otp_app)
       metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :ecto))
 
+      show_write_stats = Keyword.get(opts, :show_write_stats, true)
+      show_read_stats = Keyword.get(opts, :show_read_stats, true)
+      show_set_stats = Keyword.get(opts, :show_set_stats, true)
+
       repo_event_prefixes =
         opts
         |> Keyword.get_lazy(:repos, fn ->
@@ -63,7 +67,7 @@ if Code.ensure_loaded?(Ecto) do
       # them as not to create multiple definitions of the same metrics. The final data point will
       # have a label for the Repo associated with the event though so you'll be able to separate one
       # repos measurements from another.
-      set_up_telemetry_proxy(repo_event_prefixes)
+      set_up_telemetry_proxy(repo_event_prefixes, %{show_write_stats: show_write_stats, show_read_stats: show_read_stats, show_set_stats: show_set_stats})
 
       # Event metrics definitions
       [
@@ -73,8 +77,21 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     @doc false
+    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: :set} = _pg_result}} = _event_metadata, %{show_set_stats: false} = _config) do
+      :ok
+    end
+
+    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: :select} = _pg_result}} = _event_metadata, %{show_read_stats: false} = _config) do
+      :ok
+    end
+
+    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: _} = _pg_result}} = _event_metadata, %{show_write_stats: false} = _config) do
+      :ok
+    end
+
     def handle_proxy_query_event(_event_name, event_measurement, event_metadata, _config) do
-      :telemetry.execute(@query_event, event_measurement, event_metadata)
+      if :persistent_term.get(:pv_statistics, true),
+        do: :telemetry.execute(@query_event, event_measurement, event_metadata)
     end
 
     # Generate the default telemetry prefix
@@ -215,7 +232,7 @@ if Code.ensure_loaded?(Ecto) do
       )
     end
 
-    defp set_up_telemetry_proxy(repo_event_prefixes) do
+    defp set_up_telemetry_proxy(repo_event_prefixes, opts) do
       repo_event_prefixes
       |> Enum.each(fn telemetry_prefix ->
         query_event = telemetry_prefix ++ [:query]
@@ -224,7 +241,7 @@ if Code.ensure_loaded?(Ecto) do
           [:prom_ex, :ecto, :proxy] ++ telemetry_prefix,
           query_event,
           &__MODULE__.handle_proxy_query_event/4,
-          %{}
+          opts
         )
       end)
     end
