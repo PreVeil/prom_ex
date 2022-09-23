@@ -81,7 +81,10 @@ if Code.ensure_loaded?(Ecto) do
       :ok
     end
 
-    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: :select} = _pg_result}} = _event_metadata, %{show_read_stats: false} = _config) do
+    def handle_proxy_query_event(_event_name, event_measurement, %{result: {:ok, %{command: :select} = _pg_result}} = event_metadata, %{show_read_stats: false} = _config) do
+      ## Added for Ravi
+      if :persistent_term.get(:ecto_stats, true) && :persistent_term.get(:ecto_read_stats, false),
+        do: :telemetry.execute(@query_event, event_measurement, event_metadata)
       :ok
     end
 
@@ -272,6 +275,10 @@ if Code.ensure_loaded?(Ecto) do
 
     defp normalize_command({:ok, %_{command: command}}) when is_atom(command) do
       Atom.to_string(command)
+    end
+
+    defp normalize_command({:error, _}) do
+      "error"
     end
 
     defp normalize_command(_) do
