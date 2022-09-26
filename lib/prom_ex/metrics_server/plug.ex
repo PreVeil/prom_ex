@@ -33,6 +33,7 @@ defmodule PromEx.MetricsServer.Plug do
 
       metrics ->
         PromEx.ETSCronFlusher.defer_ets_flush(prom_ex_module.__ets_cron_flusher_name__())
+        scrape_event(conn, prom_ex_module)
 
         conn
         |> put_resp_content_type("text/plain")
@@ -78,4 +79,13 @@ defmodule PromEx.MetricsServer.Plug do
     |> put_resp_content_type("text/plain")
     |> send_resp(404, "Not Found")
   end
+
+  def scrape_event(conn, prom_ex_module) do
+     try do
+       prom_ex_module.scrape_event(conn)
+     rescue
+       _ -> :ok
+     end
+  end
+
 end
