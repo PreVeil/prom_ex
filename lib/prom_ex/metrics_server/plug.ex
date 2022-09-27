@@ -33,11 +33,11 @@ defmodule PromEx.MetricsServer.Plug do
 
       metrics ->
         PromEx.ETSCronFlusher.defer_ets_flush(prom_ex_module.__ets_cron_flusher_name__())
-        scrape_event(conn, prom_ex_module)
 
         conn
         |> put_resp_content_type("text/plain")
         |> send_resp(200, metrics)
+        |> tap(fn(_) -> scrape_event(conn, prom_ex_module) end)
     end
   end
 
