@@ -47,7 +47,7 @@ if Code.ensure_loaded?(Ecto) do
 
       show_write_stats = Keyword.get(opts, :show_write_stats, true)
       show_read_stats = Keyword.get(opts, :show_read_stats, true)
-      show_set_stats = Keyword.get(opts, :show_set_stats, true)
+      show_internal_stats = Keyword.get(opts, :show_internal_stats, true)
 
       repo_event_prefixes =
         opts
@@ -67,7 +67,7 @@ if Code.ensure_loaded?(Ecto) do
       # them as not to create multiple definitions of the same metrics. The final data point will
       # have a label for the Repo associated with the event though so you'll be able to separate one
       # repos measurements from another.
-      set_up_telemetry_proxy(repo_event_prefixes, %{show_write_stats: show_write_stats, show_read_stats: show_read_stats, show_set_stats: show_set_stats})
+      set_up_telemetry_proxy(repo_event_prefixes, %{show_write_stats: show_write_stats, show_read_stats: show_read_stats, show_internal_stats: show_internal_stats})
 
       # Event metrics definitions
       [
@@ -77,10 +77,26 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     @doc false
-    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: :set} = _pg_result}} = _event_metadata, %{show_set_stats: false} = _config) do
+    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: :set} = _pg_result}} = _event_metadata, %{show_internal_stats: false} = _config) do
       :ok
     end
 
+    @doc false
+    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: :begin} = _pg_result}} = _event_metadata, %{show_internal_stats: false} = _config) do
+      :ok
+    end
+
+    @doc false
+    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: :rollback} = _pg_result}} = _event_metadata, %{show_internal_stats: false} = _config) do
+      :ok
+    end
+
+    @doc false
+    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: :commit} = _pg_result}} = _event_metadata, %{show_internal_stats: false} = _config) do
+      :ok
+    end
+
+    @doc false
     def handle_proxy_query_event(_event_name, event_measurement, %{result: {:ok, %{command: :select} = _pg_result}} = event_metadata, %{show_read_stats: false} = _config) do
       ## Added for Ravi
       if :persistent_term.get(:ecto_stats, true) && :persistent_term.get(:ecto_read_stats, false),
@@ -88,11 +104,26 @@ if Code.ensure_loaded?(Ecto) do
       :ok
     end
 
+    @doc false
+    # inserts have no source .... wtf
+    def handle_proxy_query_event(_event_name, event_measurement, %{result: {:ok, _pg_result}, query: <<"INSERT INTO "::bytes, _::8, rest::bytes>>, source: nil} = event_metadata, _config) do
+      [source, _] = String.split(rest, "\"", parts: 2)
+      if :persistent_term.get(:ecto_stats, true),
+        do: :telemetry.execute(@query_event, event_measurement, %{ event_metadata | source: source})
+    end
+
+    @doc false
+    def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: _} = _pg_result}, source: nil} = _event_metadata, _config) do
+      :ok
+    end
+
+    @doc false
     def handle_proxy_query_event(_event_name, _event_measurement, %{result: {:ok, %{command: _} = _pg_result}} = _event_metadata, %{show_write_stats: false} = _config) do
       :ok
     end
 
-    def handle_proxy_query_event(_event_name, event_measurement, event_metadata, _config) do
+    @doc false
+    def handle_proxy_query_event(event_name, event_measurement, event_metadata, config) do
       if :persistent_term.get(:ecto_stats, true),
         do: :telemetry.execute(@query_event, event_measurement, event_metadata)
     end
@@ -257,8 +288,9 @@ if Code.ensure_loaded?(Ecto) do
       }
     end
 
-    defp ecto_query_tag_values(%{source: nil}), do:
+    defp ecto_query_tag_values(%{source: nil} = s) do
       %{}
+    end
 
     defp ecto_query_tag_values(%{repo: repo, source: source, result: result}) do
       %{
