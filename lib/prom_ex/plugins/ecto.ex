@@ -123,7 +123,7 @@ if Code.ensure_loaded?(Ecto) do
     end
 
     @doc false
-    def handle_proxy_query_event(event_name, event_measurement, event_metadata, config) do
+    def handle_proxy_query_event(_event_name, event_measurement, event_metadata, _config) do
       if :persistent_term.get(:ecto_stats, true),
         do: :telemetry.execute(@query_event, event_measurement, event_metadata)
     end
@@ -288,7 +288,7 @@ if Code.ensure_loaded?(Ecto) do
       }
     end
 
-    defp ecto_query_tag_values(%{source: nil} = s) do
+    defp ecto_query_tag_values(%{source: nil}) do
       %{}
     end
 
