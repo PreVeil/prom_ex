@@ -122,6 +122,21 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             unit: {:native, :millisecond}
           ),
 
+          # Capture request payload size information
+          distribution(
+            metric_prefix ++ [:http, :request, :size, :bytes],
+            event_name: cowboy_stop_event,
+            measurement: :req_body_length,
+            description: "The size of the HTTP request payload.",
+            reporter_options: [
+              buckets: [64, 512, 4_096, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216]
+            ],
+            drop: Process.get(:current_drop_good_route),
+            tag_values: &get_tags(&1, :get),
+            tags: http_metrics_tags,
+            unit: :byte
+          ),
+
           # Capture response payload size information
           distribution(
             metric_prefix ++ [:http, :response, :size, :bytes],
