@@ -32,6 +32,11 @@ defmodule PromEx.ManualMetricsManager do
     |> GenServer.cast(:refresh_metrics)
   end
 
+  def refresh_metrics(prom_ex_module,  module, function) do
+    prom_ex_module.__manual_metrics_name__()
+    |> GenServer.cast({:refresh_metrics, module, function})
+  end
+
   @impl true
   def init(%{metrics: []}) do
     Logger.debug("No PromEx ManualMetrics have been configured. Stopping PromEx.ManualMetricsManager")
@@ -70,10 +75,21 @@ defmodule PromEx.ManualMetricsManager do
     {:noreply, state}
   end
 
+  def handle_cast({:refresh_metrics, module, function}, state) do
+    internal_refresh_metrics(state, module, function)
+
+    {:noreply, state}
+  end
+
   defp internal_refresh_metrics(state) do
     state.metrics
     |> Enum.each(fn {module, function, args} ->
       apply(module, function, args)
     end)
+  end
+
+  defp internal_refresh_metrics(state, module, function) do
+    Enum.find(state.metrics, fn({^module, ^function, _}) -> true; (_) -> false end)
+    |> then(fn({m, f, a}) -> apply(m, f, a); (_) -> :ok end) 
   end
 end
