@@ -171,7 +171,8 @@ defmodule PromEx do
       @impl Supervisor
       def init(_) do
         # Get module init options from module callback
-        :ets.new(:prom_ex_proc_delta, [:named_table, :public])
+        if :ets.info(:prom_ex_proc_delta) == :undefined, do:
+          :ets.new(:prom_ex_proc_delta, [:named_table, :public])
         __MODULE__.otp_init()
         %PromEx.Config{
           disabled: disabled,
