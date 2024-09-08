@@ -12,6 +12,9 @@ if Code.ensure_loaded?(Phoenix) do
       in your `dashboard_assigns` to the snakecase version of your prefix, the default
       `phoenix_metric_prefix` is `{otp_app}_prom_ex_phoenix`.
 
+    - `duration_unit`: This is an OPTIONAL option and is a `Telemetry.Metrics.time_unit()`. It can be one of:
+      `:second | :millisecond | :microsecond | :nanosecond`. It is `:millisecond` by default.
+
     ### Single Endpoint/Router
     - `router`: This option is REQUIRED and is the full module name of your Phoenix Router (e.g MyAppWeb.Router).
 
@@ -32,6 +35,20 @@ if Code.ensure_loaded?(Phoenix) do
       will be set to `some-route`. You can pass in either a regular expression or a string to match the incoming
       request.
 
+    - `normalize_event_name`: This option is OPTIONAL and allows you to remap the channel event names to a different
+      name. This is useful if you want to limit the number or size of event names that are emitted.
+
+      For example, if you have a channel and only want to emit unique metrics for the 'join' and 'leave' events, you can
+      map those events to themselves and map all other events to an 'unknown' event.
+
+      ```elixir
+        fn
+          "join" -> "join"
+          "leave" -> "leave"
+          _ -> "unknown"
+        end
+      ```
+
     #### Example plugin configuration
 
     ```elixir
@@ -39,7 +56,8 @@ if Code.ensure_loaded?(Phoenix) do
       PromEx.Plugins.Phoenix,
       endpoint: MyApp.Endpoint,
       router: MyAppWeb.Public.Router,
-      event_prefix: [:admin, :endpoint]
+      event_prefix: [:admin, :endpoint],
+      normalize_event_name: fn event -> event end)
     }
     ```
 
@@ -77,7 +95,7 @@ if Code.ensure_loaded?(Phoenix) do
     - `:phoenix_http_event_metrics`
     - `:phoenix_channel_event_metrics`
     - `:phoenix_socket_event_metrics`
-    - `:phoenix_endpoint_manual_metrics`
+    - `:phoenix_endpoint_metrics`
 
     ## Usage
 
@@ -146,111 +164,103 @@ if Code.ensure_loaded?(Phoenix) do
 
     alias Phoenix.Socket
     alias Plug.Conn
+    alias PromEx.Utils
 
     @stop_event [:prom_ex, :plugin, :phoenix, :stop]
+    @init_event [:phoenix, :endpoint, :init]
 
     @impl true
     def event_metrics(opts) do
       otp_app = Keyword.fetch!(opts, :otp_app)
       metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :phoenix))
       phoenix_event_prefixes = fetch_event_prefixes!(opts)
+      duration_unit = Keyword.get(opts, :duration_unit, :millisecond)
+      normalize_event_name = Keyword.get(opts, :normalize_event_name, fn event -> event end)
 
       set_up_telemetry_proxy(phoenix_event_prefixes)
 
       # Event metrics definitions
       [
+        endpoint_info(metric_prefix, opts),
         http_events(metric_prefix, opts),
-        channel_events(metric_prefix),
-        socket_events(metric_prefix)
-      ]
-    end
-
-    @impl true
-    def manual_metrics(opts) do
-      otp_app = Keyword.fetch!(opts, :otp_app)
-      metric_prefix = Keyword.get(opts, :metric_prefix, PromEx.metric_prefix(otp_app, :phoenix))
-
-      [
-        endpoint_info(metric_prefix, opts)
+        channel_events(metric_prefix, duration_unit, normalize_event_name),
+        socket_events(metric_prefix, duration_unit)
       ]
     end
 
     defp endpoint_info(metric_prefix, opts) do
       # Fetch user options
       phoenix_endpoint = Keyword.get(opts, :endpoint) || Keyword.get(opts, :endpoints)
+      keep_function_filter = keep_endpoint_metrics(phoenix_endpoint)
 
-      Manual.build(
-        :phoenix_endpoint_manual_metrics,
-        {__MODULE__, :execute_phoenix_endpoint_info, [phoenix_endpoint]},
+      Event.build(
+        :phoenix_endpoint_metrics,
         [
           last_value(
             metric_prefix ++ [:endpoint, :url, :info],
-            event_name: [:prom_ex, :plugin, :phoenix, :endpoint_url],
+            event_name: @init_event,
             description: "The configured URL of the Endpoint module.",
-            measurement: :status,
-            tags: [:url, :endpoint]
+            measurement: fn _measurements -> 1 end,
+            tag_values: &phoenix_init_tag_values/1,
+            tags: [:url, :endpoint],
+            keep: keep_function_filter
           ),
           last_value(
             metric_prefix ++ [:endpoint, :port, :info],
-            event_name: [:prom_ex, :plugin, :phoenix, :endpoint_port],
+            event_name: @init_event,
             description: "The configured port of the Endpoint module.",
-            measurement: :status,
-            tags: [:port, :endpoint]
+            measurement: fn _measurements -> 1 end,
+            tag_values: &phoenix_init_tag_values/1,
+            tags: [:port, :endpoint],
+            keep: keep_function_filter
           )
         ]
       )
     end
 
-    @doc false
-    def execute_phoenix_endpoint_info(endpoint) do
-      # TODO: This is a bit of a hack until Phoenix supports an init telemetry event to
-      # reliably get the configuration.
-      endpoint_init_checker = fn
-        count, endpoint_module, endpoint_init_checker_function when count < 10 ->
-          case Process.whereis(endpoint_module) do
-            pid when is_pid(pid) ->
-              measurements = %{status: 1}
-              url_metadata = %{url: endpoint_module.url(), endpoint: normalize_module_name(endpoint_module)}
-              :telemetry.execute([:prom_ex, :plugin, :phoenix, :endpoint_url], measurements, url_metadata)
+    defp keep_endpoint_metrics(phoenix_endpoint) when is_atom(phoenix_endpoint) do
+      keep_endpoint_metrics([phoenix_endpoint])
+    end
 
-              %URI{port: port} = endpoint_module.struct_url()
-              port_metadata = %{port: port, endpoint: normalize_module_name(endpoint_module)}
-              :telemetry.execute([:prom_ex, :plugin, :phoenix, :endpoint_port], measurements, port_metadata)
-
-            _ ->
-              Process.sleep(1_000)
-              endpoint_init_checker_function.(count + 1, endpoint_module, endpoint_init_checker_function)
-          end
-
-        _, _, _ ->
-          :noop
+    defp keep_endpoint_metrics(phoenix_endpoints) do
+      fn %{module: module} ->
+        module in phoenix_endpoints
       end
+    end
 
-      if is_list(endpoint) do
-        endpoint
-        |> Enum.each(fn {endpoint_module, _} ->
-          Task.start(fn ->
-            endpoint_init_checker.(0, endpoint_module, endpoint_init_checker)
-          end)
-        end)
-      else
-        Task.start(fn ->
-          endpoint_init_checker.(0, endpoint, endpoint_init_checker)
-        end)
-      end
+    defp phoenix_init_tag_values(%{config: config, module: module}) do
+      port =
+        cond do
+          Keyword.has_key?(config, :http) and config[:http][:port] ->
+            config[:http][:port]
+
+          Keyword.has_key?(config, :https) and config[:https][:port] ->
+            config[:https][:port]
+
+          true ->
+            "Unknown"
+        end
+
+      %{
+        endpoint: module,
+        url: module.url(),
+        port: port
+      }
     end
 
     defp http_events(metric_prefix, opts) do
       routers = fetch_routers!(opts)
       additional_routes = fetch_additional_routes!(opts)
-      http_metrics_tags = [:status, :method, :path, :controller, :action]
+      http_metrics_tags = [:status, :method, :path, :controller, :action, :host]
+      duration_unit = Keyword.get(opts, :duration_unit, :millisecond)
+      duration_unit_plural = Utils.make_plural_atom(duration_unit)
 
       Event.build(
         :phoenix_http_event_metrics,
         [
           # Capture request duration information
           distribution(
-            metric_prefix ++ [:http, :request, :duration, :milliseconds],
+            metric_prefix ++ [:http, :request, :duration, duration_unit_plural],
             event_name: @stop_event,
             measurement: :duration,
             description: "The time it takes for the application to respond to HTTP requests.",
@@ -259,7 +269,7 @@ if Code.ensure_loaded?(Phoenix) do
             ],
             tag_values: get_conn_tags(routers, additional_routes),
             tags: http_metrics_tags,
-            unit: {:native, :millisecond}
+            unit: {:native, duration_unit}
           ),
 
           # Capture response payload size information
@@ -293,7 +303,9 @@ if Code.ensure_loaded?(Phoenix) do
       )
     end
 
-    defp channel_events(metric_prefix) do
+    defp channel_events(metric_prefix, duration_unit, normalize_event_name) do
+      duration_unit_plural = Utils.make_plural_atom(duration_unit)
+
       Event.build(
         :phoenix_channel_event_metrics,
         [
@@ -314,32 +326,36 @@ if Code.ensure_loaded?(Phoenix) do
 
           # Capture channel handle_in duration
           distribution(
-            metric_prefix ++ [:channel, :handled_in, :duration, :milliseconds],
+            metric_prefix ++ [:channel, :handled_in, :duration, duration_unit_plural],
             event_name: [:phoenix, :channel_handled_in],
             measurement: :duration,
             description: "The time it takes for the application to respond to channel messages.",
             reporter_options: [
               buckets: [10, 100, 500, 1_000, 5_000, 10_000]
             ],
-            tag_values: fn %{socket: %Socket{endpoint: endpoint}} ->
+            tag_values: fn %{socket: %Socket{endpoint: endpoint, handler: handler}, event: event} ->
               %{
-                endpoint: normalize_module_name(endpoint)
+                endpoint: normalize_module_name(endpoint),
+                event: normalize_event_name.(event),
+                handler: handler
               }
             end,
-            tags: [:endpoint],
-            unit: {:native, :millisecond}
+            tags: [:endpoint, :handler, :event],
+            unit: {:native, duration_unit}
           )
         ]
       )
     end
 
-    defp socket_events(metric_prefix) do
+    defp socket_events(metric_prefix, duration_unit) do
+      duration_unit_plural = Utils.make_plural_atom(duration_unit)
+
       Event.build(
         :phoenix_socket_event_metrics,
         [
           # Capture socket connection duration
           distribution(
-            metric_prefix ++ [:socket, :connected, :duration, :milliseconds],
+            metric_prefix ++ [:socket, :connected, :duration, duration_unit_plural],
             event_name: [:phoenix, :socket_connected],
             measurement: :duration,
             description: "The time it takes for the application to establish a socket connection.",
@@ -354,7 +370,7 @@ if Code.ensure_loaded?(Phoenix) do
               }
             end,
             tags: [:result, :transport, :endpoint],
-            unit: {:native, :millisecond}
+            unit: {:native, duration_unit}
           )
         ]
       )
@@ -373,7 +389,8 @@ if Code.ensure_loaded?(Phoenix) do
           |> do_get_router_info(routers, default_route_tags)
           |> Map.merge(%{
             status: conn.status,
-            method: conn.method
+            method: conn.method,
+            host: conn.host
           })
 
         _ ->
@@ -390,7 +407,8 @@ if Code.ensure_loaded?(Phoenix) do
           |> do_get_router_info(routers, default_route_tags)
           |> Map.merge(%{
             status: conn.status,
-            method: conn.method
+            method: conn.method,
+            host: conn.host
           })
 
         _ ->
@@ -401,7 +419,7 @@ if Code.ensure_loaded?(Phoenix) do
     defp do_get_router_info(conn, routers, default_route_tags) do
       routers
       |> Enum.find_value(default_route_tags, fn router ->
-        case Phoenix.Router.route_info(router, conn.method, conn.request_path, "") do
+        case Phoenix.Router.route_info(router, conn.method, conn.request_path, conn.host) do
           :error ->
             false
 

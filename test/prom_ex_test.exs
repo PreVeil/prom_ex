@@ -102,7 +102,7 @@ defmodule PromExTest do
       # Give the manual metrics manager a chance to capture application metrics
       Process.sleep(1_000)
 
-      # Get supervsion tree child proceses
+      # Get supervsion tree child processes
       manual_metrics_pid = Process.whereis(DefaultPromExSetUp.__manual_metrics_name__())
       metrics_collector_pid = Process.whereis(DefaultPromExSetUp.__metrics_collector_name__())
       dashboard_uploader_pid = Process.whereis(DefaultPromExSetUp.__dashboard_uploader_name__())
@@ -233,6 +233,24 @@ defmodule PromExTest do
       assert ManualMetricsDelayStart
              |> Process.whereis()
              |> Process.exit(:normal)
+    end
+  end
+
+  describe "grafana_client_child_spec" do
+    test ":disabled" do
+      assert PromEx.grafana_client_child_spec([], :disabled, PromEx, ProcessName) == []
+    end
+
+    test "default" do
+      assert PromEx.grafana_client_child_spec([], %{finch_pools: nil}, PromEx, ProcessName) == [
+               {PromEx.GrafanaClient, name: ProcessName}
+             ]
+    end
+
+    test "finch_pools" do
+      assert PromEx.grafana_client_child_spec([], %{finch_pools: %{default: [size: 1]}}, PromEx, ProcessName) == [
+               {PromEx.GrafanaClient, name: ProcessName, pools: %{default: [size: 1]}}
+             ]
     end
   end
 end

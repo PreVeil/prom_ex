@@ -53,6 +53,22 @@ defmodule PromEx do
     matches the `:app` value in `project/0` from your `mix.exs` file. If you use the PromEx
     `mix prom_ex.create` mix task this will be done automatically for you.
 
+  ## Top level PromEx Configuration
+
+  PromEx is generally configured per application per PromEx module as you saw in the previous section. The only
+  setting that is currently available globally for all instances of PromEx is that of the storage adapter. The
+  storage adapter configuration determines how PromEx captures and stores metrics. There are currently two
+  available adapters:
+
+  1. [TelemetryMetricsPrometheus.Core](https://github.com/beam-telemetry/telemetry_metrics_prometheus_core) - This is the
+  default adapter and is included with PromEx.
+  2. [Peep](https://github.com/rkallos/peep) - In order to use Peep as your storage adapter,  you will need to add the following
+  to your `config.exs` file:
+
+      ```elixir
+      config :prom_ex, :storage_adapter, PromEx.Storage.Peep
+      ```
+
   ## PromEx Plugins
 
   All metrics collection will be delegated to plugins which can be found here:
@@ -106,8 +122,6 @@ defmodule PromEx do
 
   alias Telemetry.Metrics.{Counter, Distribution, LastValue, Sum, Summary}
 
-  alias TelemetryMetricsPrometheus.Core
-
   @type telemetry_metrics() :: Counter.t() | Distribution.t() | LastValue.t() | Sum.t() | Summary.t()
   @type measurements_mfa() :: {module(), atom(), list()}
 
@@ -122,10 +136,9 @@ defmodule PromEx do
   @spec get_metrics(prom_ex_module :: module()) :: String.t() | :prom_ex_down
   def get_metrics(prom_ex_module) do
     prom_ex_process_name = prom_ex_module.__metrics_collector_name__()
+    store = prom_ex_module.__store__()
 
-    if Process.whereis(prom_ex_process_name),
-      do: Core.scrape(prom_ex_process_name),
-      else: :prom_ex_down
+    PromEx.Storage.scrape(store, prom_ex_process_name)
   end
 
   @callback init_opts :: PromEx.Config.t()
@@ -147,6 +160,8 @@ defmodule PromEx do
         :error ->
           raise "Failed to initialize #{inspect(calling_module)} due to missing :otp_app option"
       end
+
+    store = PromEx.storage_adapter()
 
     # Generate process names under calling module namespace
     ets_cron_flusher_name = Module.concat([calling_module, ETSCronFlusher])
@@ -206,7 +221,7 @@ defmodule PromEx do
           children =
             []
             |> PromEx.ets_cron_flusher_child_spec(__MODULE__, ets_flush_interval, unquote(ets_cron_flusher_name))
-            |> PromEx.metrics_collector_child_spec(telemetry_metrics, unquote(metrics_collector_name))
+            |> PromEx.metrics_collector_child_spec(unquote(store), telemetry_metrics, unquote(metrics_collector_name))
             |> PromEx.manual_metrics_child_spec(
               manual_metrics,
               manual_metrics_start_delay,
@@ -363,8 +378,16 @@ defmodule PromEx do
       @doc false
       def __ets_cron_flusher_name__, do: unquote(ets_cron_flusher_name)
 
+      @doc false
+      def __store__, do: unquote(store)
+
       defoverridable PromEx
     end
+  end
+
+  @doc false
+  def storage_adapter do
+    Application.get_env(:prom_ex, :storage_adapter, PromEx.Storage.Core)
   end
 
   @doc false
@@ -401,13 +424,8 @@ defmodule PromEx do
   end
 
   @doc false
-  def metrics_collector_child_spec(acc, metrics, process_name) do
-    spec = {
-      Core,
-      name: process_name, metrics: metrics, require_seconds: false, consistent_units: true, start_async: false
-    }
-
-    [spec | acc]
+  def metrics_collector_child_spec(acc, store, metrics, process_name) do
+    [PromEx.Storage.child_spec(store, process_name, metrics) | acc]
   end
 
   @doc false
@@ -442,8 +460,16 @@ defmodule PromEx do
     acc
   end
 
-  def grafana_client_child_spec(acc, _, _, process_name) do
-    spec = {PromEx.GrafanaClient, name: process_name}
+  def grafana_client_child_spec(acc, grafana_config, _, process_name) do
+    opts =
+      if pools = Map.fetch!(grafana_config, :finch_pools) do
+        [pools: pools]
+      else
+        []
+      end
+      |> Keyword.put(:name, process_name)
+
+    spec = {PromEx.GrafanaClient, opts}
 
     [spec | acc]
   end

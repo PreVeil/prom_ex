@@ -18,6 +18,7 @@ defmodule PromEx.GrafanaClient do
     401 => :unauthorized,
     403 => :forbidden,
     404 => :not_found,
+    409 => :already_exists,
     412 => :already_exists
   }
 
@@ -206,16 +207,16 @@ defmodule PromEx.GrafanaClient do
         {:ok, Jason.decode!(body)}
 
       {:ok, %Finch.Response{status: status_code} = response} ->
-        Logger.warn("Received a #{status_code} from Grafana because: #{inspect(response)}")
+        Logger.warning("Received a #{status_code} from Grafana because: #{inspect(response)}")
         {:error, lookup_status_code(status_code)}
 
       {:error, %Mint.TransportError{} = mint_error_reason} ->
         {:error, Exception.message(mint_error_reason)}
 
       unknown_response ->
-        Logger.warn("Received an unhandled response from Grafana because: #{inspect(unknown_response)}")
+        Logger.warning("Received an unhandled response from Grafana because: #{inspect(unknown_response)}")
 
-        {:error, :unkown}
+        {:error, :unknown}
     end
   end
 

@@ -16,7 +16,8 @@ if Code.ensure_loaded?(Plug.Cowboy) do
     in your `dashboard_assigns` to the snakecase version of your prefix, the default
     `plug_cowboy_metric_prefix` is `{otp_app}_prom_ex_plug_cowboy`.
 
-
+    - `duration_unit`: This is an OPTIONAL option and is a `Telemetry.Metrics.time_unit()`. It can be one of:
+      `:second | :millisecond | :microsecond | :nanosecond`. It is `:millisecond` by default.
 
     To use plugin in your application, add the following to your PromEx module:
 
@@ -78,12 +79,15 @@ if Code.ensure_loaded?(Plug.Cowboy) do
       drop_bad_routes_fun = Keyword.get(opts , :drop_bad_routes_fun, fn(_) -> true end)
       path_formatter_fun = Keyword.get(opts , :path_formatter_fun, fn(%{req: %{path: path}}) -> path end)
 
+      duration_unit = Keyword.get(opts, :duration_unit, :millisecond)
+      duration_unit_plural = String.to_atom("#{duration_unit}s")
+
       Event.build(
         :plug_cowboy_http_event_metrics,
         [
           # Capture request duration information
           distribution(
-            metric_prefix ++ [:http, :request, :duration, :milliseconds],
+            metric_prefix ++ [:http, :request, :duration, duration_unit_plural],
             event_name: cowboy_stop_event,
             measurement: :duration,
             description: "The time it takes for the application to process HTTP requests.",
@@ -93,10 +97,10 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             drop: drop_good_route?(drop_good_routes_fun),
             tag_values: &get_tags(&1, path_formatter_fun),
             tags: http_metrics_tags,
-            unit: {:native, :millisecond}
+            unit: {:native, duration_unit}
           ),
           distribution(
-            metric_prefix ++ [:http, :response, :duration, :milliseconds],
+            metric_prefix ++ [:http, :response, :duration, duration_unit_plural],
             event_name: cowboy_stop_event,
             measurement: :resp_duration,
             description: "The time it takes for the application to send the HTTP response.",
@@ -106,10 +110,10 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             drop: Process.get(:current_drop_good_route),
             tag_values: &get_tags(&1, :get),
             tags: http_metrics_tags,
-            unit: {:native, :millisecond}
+            unit: {:native, duration_unit}
           ),
           distribution(
-            metric_prefix ++ [:http, :request_body, :duration, :milliseconds],
+            metric_prefix ++ [:http, :request_body, :duration, duration_unit_plural],
             event_name: cowboy_stop_event,
             measurement: :req_body_duration,
             description: "The time it takes for the application to receive the HTTP request body.",
@@ -119,7 +123,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
             drop: Process.get(:current_drop_good_route),
             tag_values: &get_tags(&1, :get),
             tags: http_metrics_tags,
-            unit: {:native, :millisecond}
+            unit: {:native, duration_unit}
           ),
 
           # Capture request payload size information
@@ -204,7 +208,7 @@ if Code.ensure_loaded?(Plug.Cowboy) do
           }
 
         nil ->
-          Logger.warn("Cowboy failed to provide valid response status #{inspect(resp_status)}")
+          Logger.warning("Cowboy failed to provide valid response status #{inspect(resp_status)}")
           %{}
       end
     end

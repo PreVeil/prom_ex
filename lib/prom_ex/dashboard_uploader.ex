@@ -89,9 +89,10 @@ defmodule PromEx.DashboardUploader do
     {apply_function, dashboard_opts} = Keyword.pop(dashboard_opts, :apply_function, fn dashboard -> dashboard end)
 
     default_title =
-      prom_ex_module.__otp_app__()
-      |> Atom.to_string()
-      |> Macro.camelize()
+      Keyword.get(user_provided_assigns, :title) ||
+        prom_ex_module.__otp_app__()
+        |> Atom.to_string()
+        |> Macro.camelize()
 
     default_dashboard_name =
       dashboard_relative_path
@@ -132,7 +133,9 @@ defmodule PromEx.DashboardUploader do
         Logger.info("PromEx.DashboardUploader successfully uploaded #{full_dashboard_path} to Grafana.")
 
       {:error, reason} ->
-        Logger.warn("PromEx.DashboardUploader failed to upload #{full_dashboard_path} to Grafana: #{inspect(reason)}")
+        Logger.warning(
+          "PromEx.DashboardUploader failed to upload #{full_dashboard_path} to Grafana: #{inspect(reason)}"
+        )
     end
   end
 
@@ -168,7 +171,8 @@ defmodule PromEx.DashboardUploader do
       {:ok, folder_details} ->
         folder_details
 
-      {:error, :bad_request} ->
+      {:error, reason} ->
+        Logger.error("PromEx.DashboardUploader failed to create folder in Grafana: #{inspect(reason)}.")
         {:ok, all_folders} = GrafanaClient.get_all_folders(grafana_conn)
 
         all_folders

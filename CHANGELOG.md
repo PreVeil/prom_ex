@@ -7,9 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2024-08-10
+
 ### Added
 
-- Download Grafana Agent on FreeBSD
+- Option to not detach polling metrics MFA calls when they encounter an error
+  (see [#236](https://github.com/akoutmos/prom_ex/issues/236) for am example).
+- Support for Peep as a metrics storage engine [#240](https://github.com/akoutmos/prom_ex/pull/240) &
+  [#241](https://github.com/akoutmos/prom_ex/pull/241). Read the PromEx module docs for how this works as the
+  implementation changed after this merge.
+- Configuration for dashboard title [#226](https://github.com/akoutmos/prom_ex/pull/226).
+
+### Fixed
+
+- Pool size and timeout duration panels in Ecto dashboard [#223](https://github.com/akoutmos/prom_ex/pull/223).
+- MFA invocation for GrafanaAgent configuration file creation.
+
+### Changed
+
+- Dropped support for old versions of Grafana Agent and now the only available version is the 0.42.0 release of Grafana
+  Agent. Eventually PromEx will migrate to Grafana Alloy as that is the
+  [successor for Grafana agent](https://grafana.com/blog/2024/04/09/grafana-alloy-opentelemetry-collector-with-prometheus-pipelines/).
+- Updated package requirements as providing support for older versions of libraries is becoming difficult.
+- Removed deprecated `Logger.warn` calls [#207](https://github.com/akoutmos/prom_ex/pull/207).
+- The Phoenix plugin now leans on the `[:phoenix, :endpoint, :init]` telemetry event for `Endpoint` metrics as
+  opposed to polling [c358232](https://github.com/akoutmos/prom_ex/commit/c35823256042da4047237b8420b498d69ae54b27).
+
+## [1.9.0] - 2023-10-12
+
+### Added
+
+- Added host tag to phoenix plugin to handle paths depended on a subdomain [#183](https://github.com/akoutmos/prom_ex/pull/183)
+
+### Changed
+
+- Removed deprecated `Logger.warn` calls [#207](https://github.com/akoutmos/prom_ex/pull/207)
+
+### Fixed
+
+- Addressed binary memory leak in flusher GenServer [#200](https://github.com/akoutmos/prom_ex/pull/200)
+
+## [1.8.0] - 2023-04-01
+
+### Added
+
+- Support for Phoenix 1.7 [#192](https://github.com/akoutmos/prom_ex/pull/192)
+- Ability to customize time units via `:duration_unit` in plugins [#140](https://github.com/akoutmos/prom_ex/pull/140)
+- Download Grafana Agent on FreeBSD [#156](https://github.com/akoutmos/prom_ex/pull/156)
+- Ability to configure configure Grafana HTTP client Finch pools [#169](https://github.com/akoutmos/prom_ex/pull/169)
+- Ability to pass additional params to GrafanaAgent config templates [161](https://github.com/akoutmos/prom_ex/pull/161)
+- Ability to run multiple GrafanaAgent instances [#157](https://github.com/akoutmos/prom_ex/pull/157)
+- Support for GrafanaAgent 29 [#184](https://github.com/akoutmos/prom_ex/pull/184)
+- Support for Telemetry >= 1.0.0 [#193](https://github.com/akoutmos/prom_ex/pull/193)
+- Ability to normalize channel event name in Phoenix plugin [#187](https://github.com/akoutmos/prom_ex/pull/187)
+
+### Fixed
+
+- Application crashing on startup from being unable to upload dashboards due to folder UID changing [#177](https://github.com/akoutmos/prom_ex/pull/177)
+- Use topology name for message and exception tags in Broadway plugin [#134](https://github.com/akoutmos/prom_ex/pull/134)
+- Ecto plugin issue when missing repo config [#144](https://github.com/akoutmos/prom_ex/pull/144)
+- `prom_ex.dashboard.publish` Finch pool error [#127](https://github.com/akoutmos/prom_ex/pull/127) and
+  [#152](https://github.com/akoutmos/prom_ex/pull/152)
 
 ## [1.7.1] - 2022-03-02
 
@@ -44,7 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All plugin distribution buckets have been redefined. The reason for this being that prior to PromEx 1.7, some of the
   distribution buckets were a bit wasteful and were not adding value in terms of metrics data points. With this change,
   users should notice a decline in data point cardinality without compromising resolution.
-- Application plugin has changed how it fetches dependency information. It is now using `Applciation.spec/1` to get the
+- Application plugin has changed how it fetches dependency information. It is now using `Application.spec/1` to get the
   list of applications that are started with your application. This should reduce noise in the Grafana dashboard as all
   the default OTP and Elixir applications will not show up.
 - All Grafana dashboard now have a default panel sort order where the largest timeseries plot is first in the list when

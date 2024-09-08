@@ -14,7 +14,7 @@
   </a>
 
   <a href="https://github.com/akoutmos/prom_ex/actions">
-    <img alt="GitHub Workflow Status (master)" src="https://img.shields.io/github/workflow/status/akoutmos/prom_ex/PromEx%20CI/master?label=Build%20Status&style=for-the-badge">
+    <img alt="GitHub Workflow Status (master)" src="https://img.shields.io/github/actions/workflow/status/akoutmos/prom_ex/main.yml?label=Build%20Status&style=for-the-badge&branch=master">
   </a>
 
   <a href="https://coveralls.io/github/akoutmos/prom_ex?branch=master">
@@ -55,7 +55,7 @@ dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:prom_ex, "~> 1.7.1"}
+    {:prom_ex, "~> 1.10.0"}
   ]
 end
 ```
@@ -83,10 +83,6 @@ project in order to help ensure its continued development.
 
 ### Bronze Sponsors
 
-<a href="https://smartlogic.io/" style="margin-right: 10px;" target="_blank">
-  <img align="center" height="50" src="guides/images/smartlogic-logo-teal-400.png" alt="SmartLogic Consultancy">
-</a>
-
 <a href="https://github.com/sponsors/akoutmos/sponsorships?sponsor=akoutmos&tier_id=17615">
   <img align="center" height="125" src="guides/images/your_logo_here.png" alt="Support the project">
 </a>
@@ -112,6 +108,8 @@ defmodule MyCoolApp.Application do
 
   def start(_type, _args) do
     children = [
+      MyAppWeb.Endpoint,
+      # PromEx should be started after the Endpoint, to avoid unnecessary error messages
       MyCoolApp.PromEx,
 
       ...
@@ -134,7 +132,7 @@ defmodule MyCoolAppWeb.Endpoint do
   ...
 
   plug PromEx.Plug, prom_ex_module: MyCoolApp.PromEx
-  # Or plug PromEx.plug, path: "/some/other/metrics/path", prom_ex_module: MyCoolApp.PromEx
+  # Or plug PromEx.Plug, path: "/some/other/metrics/path", prom_ex_module: MyCoolApp.PromEx
 
   ...
 

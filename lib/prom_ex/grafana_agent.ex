@@ -70,15 +70,49 @@ defmodule PromEx.GrafanaAgent do
     {:noreply, state}
   end
 
-  defp start_agent(%{port_wrapper_path: port_wrapper_path, binary_path: binary_path, config_file_path: config_file_path}) do
+  defp start_agent(
+         %{
+           port_wrapper_path: port_wrapper_path,
+           binary_path: binary_path,
+           config_file_path: config_file_path
+         } = state
+       ) do
     Logger.info("Starting GrafanaAgent")
+
+    wrapper_args =
+      case state do
+        %{
+          grafana_agent_config: %{
+            config_opts: %{
+              agent_port: agent_port,
+              grpc_port: grpc_port
+            }
+          }
+        } ->
+          [
+            binary_path,
+            "-config.file",
+            config_file_path,
+            "-server.http.address",
+            "127.0.0.1:#{agent_port}",
+            "-server.grpc.address",
+            "127.0.0.1:#{grpc_port}"
+          ]
+
+        _ ->
+          [
+            binary_path,
+            "-config.file",
+            config_file_path
+          ]
+      end
 
     {:spawn_executable, port_wrapper_path}
     |> Port.open([
       :binary,
       :exit_status,
       :stderr_to_stdout,
-      args: [binary_path, "-config.file", config_file_path]
+      args: wrapper_args
     ])
   end
 
@@ -95,36 +129,44 @@ defmodule PromEx.GrafanaAgent do
     end
   end
 
-  defp do_download_grafana_agent(%{grafana_agent_config: config, prom_ex_module: prom_ex_module} = state) do
+  defp do_download_grafana_agent(%{grafana_agent_config: config} = state) do
     # Get the root path where all GrafanaAgent related items will reside
     base_directory = get_base_directory(state)
 
     # Create the necessary directory structure in the base dir
-    download_dir = Path.join(base_directory, "/download")
-    File.mkdir_p!(download_dir)
-
     bin_dir = Path.join(base_directory, "/bin")
     File.mkdir_p!(bin_dir)
 
     # Download the configured GrafanaAgent binary
-    config.version
-    |> Downloader.download_grafana_agent(download_dir, bin_dir, prom_ex_module)
+    bin_dir
+    |> Downloader.download(override_version: config.version)
     |> case do
-      {:ok, binary_path} ->
+      {:ok, [binary_path], []} ->
         binary_path
 
       {:error, reason} ->
         raise "Failed to download GrafanaAgent: #{inspect(reason)}"
+
+      :skip ->
+        derive_existing_bin_path(bin_dir)
     end
+  end
+
+  defp derive_existing_bin_path(bin_dir) do
+    bin_dir
+    |> File.ls!()
+    |> Enum.find_value(fn file ->
+      if Regex.match?(~r/grafana-agent-(?:linux|darwin|freebsd|windows)-(?:amd64|arm64)/, file) do
+        Path.join(bin_dir, file)
+      else
+        nil
+      end
+    end)
   end
 
   defp do_generate_config(state) do
     # Get the root path where all GrafanaAgent related items will reside
     base_directory = get_base_directory(state)
-
-    # Create the necessary directory structure in the base dir
-    config_dir = Path.join(base_directory, "/config")
-    File.mkdir_p!(config_dir)
 
     # Create the necessary directory structure in the base dir
     wal_dir = Path.join(base_directory, "/prom_wal")
@@ -133,10 +175,21 @@ defmodule PromEx.GrafanaAgent do
     state
     |> Map.get(:grafana_agent_config)
     |> Map.get(:config_opts)
-    |> Map.put(:wal_dir, wal_dir)
-    |> maybe_put_job(state)
-    |> maybe_put_instance()
-    |> ConfigRenderer.generate_config_file(config_dir)
+    |> case do
+      {module, function, arguments} ->
+        apply(module, function, arguments)
+
+      config_opts ->
+        # Create the necessary directory structure in the base dir
+        config_dir = Path.join(base_directory, "/config")
+        File.mkdir_p!(config_dir)
+
+        config_opts
+        |> Map.put(:wal_dir, wal_dir)
+        |> maybe_put_job(state)
+        |> maybe_put_instance()
+        |> ConfigRenderer.generate_config_file(config_dir)
+    end
   end
 
   defp maybe_put_job(%{job: nil} = opts, state) do
