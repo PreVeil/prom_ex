@@ -284,7 +284,7 @@ defmodule PromEx do
 
       @doc false
       def query_tag() do
-        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :_ | :'$1'], :_}, :_}, [], [:'$1']}])
+        :ets.select(__MODULE__.Metrics, [{{{[unquote(otp_app), :_ | :"$1"], :_}, :_}, [], [:"$1"]}])
       end
 
       @doc false
